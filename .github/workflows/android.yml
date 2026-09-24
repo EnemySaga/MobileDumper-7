@@ -1,123 +1,209 @@
-name: Android Build
+name: Android Library
 
 on:
-  push:
-    branches:
-      - main
-      - master
-  pull_request:
   workflow_dispatch:
 
 permissions:
   contents: read
 
 jobs:
-  build-android:
-    name: Android ${{ matrix.target }} ${{ matrix.arch }}
+  build:
+    name: Android lib - ${{ matrix.arch }}
     runs-on: ubuntu-24.04
 
     strategy:
       fail-fast: false
       matrix:
-        include:
-          - target: lib
-            arch: arm64
-          - target: exe
-            arch: arm64
-          - target: exe
-            arch: x86_64
+        arch:
+          - arm64
+          - armv7
 
     steps:
+      # ------------------------------------------------------------
+      # Checkout
+      # ------------------------------------------------------------
       - name: Checkout repository
         uses: actions/checkout@v4
         with:
           submodules: recursive
           fetch-depth: 0
 
-      - name: Install build dependencies
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y \
-            ninja-build \
-            clang \
-            lld \
-            cmake \
-            unzip
-
-      - name: Set up Java
+      # ------------------------------------------------------------
+      # Java
+      # ------------------------------------------------------------
+      - name: Setup Java 17
         uses: actions/setup-java@v4
         with:
           distribution: temurin
           java-version: '17'
 
-      - name: Set up Android SDK
-        uses: android-actions/setup-android@v3
+      # ------------------------------------------------------------
+      # Android SDK
+      #
+      # IMPORTANT:
+      # Only install platform-tools here.
+      # Do NOT make setup-android install the NDK.
+      # ------------------------------------------------------------
+      - name: Setup Android SDK
+        uses: android-actions/setup-android@v4
+        with:
+          packages: ''
 
-      - name: Install Android SDK / NDK
-        run: |
-          sdkmanager --install \
-            "platform-tools" \
-            "platforms;android-35" \
-            "build-tools;35.0.0" \
-            "ndk;27.2.12479018"
-
-      - name: Configure Android environment
+      # ------------------------------------------------------------
+      # Install Android SDK + NDK manually
+      # ------------------------------------------------------------
+      - name: Install Android SDK packages
         shell: bash
         run: |
-          echo "ANDROID_SDK_ROOT=$ANDROID_SDK_ROOT" >> "$GITHUB_ENV"
-          echo "ANDROID_NDK_HOME=$ANDROID_SDK_ROOT/ndk/27.2.12479018" >> "$GITHUB_ENV"
+          set -e
 
-          echo "$ANDROID_SDK_ROOT/platform-tools" >> "$GITHUB_PATH"
-          echo "$ANDROID_SDK_ROOT/cmdline-tools/latest/bin" >> "$GITHUB_PATH"
+          yes | sdkmanager --licenses >/dev/null || true
 
-      - name: Verify toolchain
+          sdkmanager \
+            "platform-tools" \
+            "platforms;android-35"
+
+      - name: Install Android NDK
+        shell: bash
         run: |
+          set -e
+
+          NDK_VERSION="27.2.12479018"
+
+          echo "Installing Android NDK ${NDK_VERSION}"
+
+          sdkmanager "ndk;${NDK_VERSION}"
+
+          NDK_PATH="${ANDROID_SDK_ROOT}/ndk/${NDK_VERSION}"
+
+          if [ ! -d "${NDK_PATH}" ]; then
+            echo "ERROR: NDK was not installed."
+            echo "Expected: ${NDK_PATH}"
+            exit 1
+          fi
+
+          echo "ANDROID_NDK_HOME=${NDK_PATH}" >> "${GITHUB_ENV}"
+          echo "ANDROID_NDK_ROOT=${NDK_PATH}" >> "${GITHUB_ENV}"
+
+          echo "${NDK_PATH}" >> "${GITHUB_PATH}"
+
+      # ------------------------------------------------------------
+      # Build tools
+      # ------------------------------------------------------------
+      - name: Install CMake and Ninja
+        shell: bash
+        run: |
+          sudo apt-get update
+
+          sudo apt-get install -y \
+            cmake \
+            ninja-build \
+            clang \
+            lld
+
+      # ------------------------------------------------------------
+      # Verify environment
+      # ------------------------------------------------------------
+      - name: Verify build environment
+        shell: bash
+        run: |
+          echo "===== CMake ====="
           cmake --version
+
+          echo "===== Ninja ====="
           ninja --version
-          clang --version
-          echo "NDK: $ANDROID_NDK_HOME"
 
-      - name: Make build script executable
-        run: chmod +x build.sh
+          echo "===== Java ====="
+          java -version
 
-      - name: Build
+          echo "===== Android SDK ====="
+          echo "${ANDROID_SDK_ROOT}"
+
+          echo "===== Android NDK ====="
+          echo "${ANDROID_NDK_HOME}"
+
+          echo "===== NDK version ====="
+          "${ANDROID_NDK_HOME}/ndk-build" --version || true
+
+      # ------------------------------------------------------------
+      # Make build.sh executable
+      # ------------------------------------------------------------
+      - name: Prepare build script
         run: |
+          chmod +x build.sh
+
+      # ------------------------------------------------------------
+      # BUILD ONLY:
+      #
+      # Android
+      # Shared library
+      # Release
+      # ARM64 / ARMv7
+      # ------------------------------------------------------------
+      - name: Build Android library
+        shell: bash
+        run: |
+          set -e
+
+          echo "========================================"
+          echo "Building MobileDumper-7"
+          echo "Platform : Android"
+          echo "Target   : lib"
+          echo "Build    : release"
+          echo "Arch     : ${{ matrix.arch }}"
+          echo "========================================"
+
           ./build.sh \
             --platform android \
-            --target "${{ matrix.target }}" \
+            --target lib \
             --build release \
             --arch "${{ matrix.arch }}"
 
-      - name: Show build output
-        if: always()
-        run: |
-          echo "===== Files ====="
-          find . -maxdepth 5 -type f \
-            \( -name "*.so" -o -name "MobileDumper7" -o -name "*.a" \) \
-            -print || true
-
-      - name: Package artifacts
+      # ------------------------------------------------------------
+      # Find generated .so
+      # ------------------------------------------------------------
+      - name: Find generated libraries
         shell: bash
         run: |
-          mkdir -p artifacts
+          echo "Searching for generated .so files..."
 
-          find . -type f \
-            \( -name "*.so" -o -name "MobileDumper7" \) \
+          find . \
+            -type f \
+            -name "*.so" \
             -not -path "./.git/*" \
-            -exec cp --parents {} artifacts/ \; || true
+            -print
 
-          if [ -z "$(find artifacts -type f -print -quit)" ]; then
-            echo "No build artifacts found."
+      # ------------------------------------------------------------
+      # Package
+      # ------------------------------------------------------------
+      - name: Package library
+        shell: bash
+        run: |
+          set -e
+
+          mkdir -p artifact
+
+          find . \
+            -type f \
+            -name "*.so" \
+            -not -path "./.git/*" \
+            -exec cp --parents {} artifact/ \;
+
+          if [ -z "$(find artifact -type f -print -quit)" ]; then
+            echo "ERROR: No .so file was generated."
             exit 1
           fi
 
           tar -czf \
-            "MobileDumper7-android-${{ matrix.target }}-${{ matrix.arch }}.tar.gz" \
-            -C artifacts .
+            "MobileDumper7-android-lib-${{ matrix.arch }}.tar.gz" \
+            -C artifact .
 
-      - name: Upload build artifact
+      # ------------------------------------------------------------
+      # Upload
+      # ------------------------------------------------------------
+      - name: Upload Android library
         uses: actions/upload-artifact@v4
         with:
-          name: MobileDumper7-android-${{ matrix.target }}-${{ matrix.arch }}
-          path: MobileDumper7-android-${{ matrix.target }}-${{ matrix.arch }}.tar.gz
+          name: MobileDumper7-android-lib-${{ matrix.arch }}
+          path: MobileDumper7-android-lib-${{ matrix.arch }}.tar.gz
           if-no-files-found: error
