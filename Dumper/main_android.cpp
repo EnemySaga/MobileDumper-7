@@ -44,7 +44,6 @@
 
 #include "Profile/CustomProfiles/Shared/ArkUltimate.h"
 #include "Profile/CustomProfiles/Shared/Auroria.h"
-#include "Profile/CustomProfiles/Shared/BlackClover.h"
 #include "Profile/CustomProfiles/Shared/OdinValhalla.h"
 #include "Profile/CustomProfiles/Shared/PES.h"
 #include "Profile/CustomProfiles/Shared/WutheringWaves.h"
@@ -58,12 +57,11 @@ std::vector<std::shared_ptr<IProfile>>& GetUECustomProfiles()
 {
 	if (UECustomProfiles.empty())
 	{
-		UECustomProfiles.push_back(std::make_shared<ArkUltimate>());
-		UECustomProfiles.push_back(std::make_shared<Auroria>());
-		UECustomProfiles.push_back(std::make_shared<BlackClover>());
-		UECustomProfiles.push_back(std::make_shared<OdinValhalla>());
-		UECustomProfiles.push_back(std::make_shared<PES>());
-		UECustomProfiles.push_back(std::make_shared<WutheringWaves>());
+		UECustomProfiles.push_back(std::make_shared<ArkUltimateProfile>());
+		UECustomProfiles.push_back(std::make_shared<AuroriaProfile>());
+		UECustomProfiles.push_back(std::make_shared<OdinValhallaProfile>());
+		UECustomProfiles.push_back(std::make_shared<PESProfile>());
+		UECustomProfiles.push_back(std::make_shared<WutheringWavesProfile>());
 		UECustomProfiles.push_back(std::make_shared<PUBGProfile>());
 		UECustomProfiles.push_back(std::make_shared<DeltaForceProfile>());
 		UECustomProfiles.push_back(std::make_shared<ValorantProfile>());
