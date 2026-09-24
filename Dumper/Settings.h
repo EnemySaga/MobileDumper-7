@@ -158,7 +158,7 @@ struct FSettings
 
 		/// When true, omits @c UWorld::GetWorld() from the generated SDK and
 		/// forces callers to obtain the world via a @c UEngine instance instead.
-		bool bForceNoGWorldInSDK = false;
+		bool bForceNoGWorldInSDK = true;
 
 		/// Emit helper functions that let callers override GObjects, GNames, and
 		/// AppendString addresses at runtime without recompiling the SDK.
